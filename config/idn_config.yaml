@@ -1,0 +1,17 @@
+train_dir: '../datas/idn-plates/checked/train/'
+valid_dir: '../datas/idn-plates/checked/valid/'
+test_dir: '../datas/idn-plates/checked/test/'
+saving_ckpt: 'saving_ckpt-idn'
+pretrained: 'saving_ckpt-idn_01-30_16:10/epoch=103-val-acc=0.774.ckpt'
+img_size: !!python/tuple [100, 50]
+dropout_rate: 0.5
+weight_decay: 0.00002
+lr: 0.001
+batch_size: 512
+t_length: 18
+chars: [
+    # NUMBERS
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+    # ALPHABETS
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'
+]
