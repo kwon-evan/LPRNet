@@ -20,11 +20,14 @@ if __name__ == "__main__":
         args = Namespace(**yaml.load(f, Loader=yaml.FullLoader))
 
     load_model_start = time.time()
-    lprnet = LPRNet(args)
-    # lprnet.load_state_dict(torch.load(args.pretrained))
+
     if args.pretrained:
-        lprnet = lprnet.load_from_checkpoint(args.pretrained)
+        lprnet = LPRNet.load_from_checkpoint(args.pretrained)
         print("Loaded checkpoint from: ", args.pretrained)
+    else:
+        lprnet = LPRNet(args)
+        print("Created new network")
+
     lprnet.eval()
     print(f"Successful to build network in {time.time() - load_model_start}s")
 
