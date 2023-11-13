@@ -6,7 +6,7 @@ import numpy as np
 import cv2
 from torch.utils.data import Dataset, DataLoader
 from imutils import paths
-import pytorch_lightning as pl
+import lightning as L
 
 from lprnet.utils import encode
 
@@ -24,8 +24,11 @@ def resize_pad(img, size):
         sizeas = (int(w * ash), int(h * ash))
 
     pic1 = cv2.resize(pic1, dsize=sizeas)
-    base_pic[int(size[1] / 2 - sizeas[1] / 2):int(size[1] / 2 + sizeas[1] / 2),
-    int(size[0] / 2 - sizeas[0] / 2):int(size[0] / 2 + sizeas[0] / 2), :] = pic1
+    base_pic[
+        int(size[1] / 2 - sizeas[1] / 2) : int(size[1] / 2 + sizeas[1] / 2),
+        int(size[0] / 2 - sizeas[0] / 2) : int(size[0] / 2 + sizeas[0] / 2),
+        :,
+    ] = pic1
 
     return base_pic
 
@@ -51,20 +54,20 @@ class LPRNetDataset(Dataset):
         self.img_paths = []
         self.img_size = self.args.img_size
 
-        if stage == 'train':
+        if stage == "train":
             self.img_dir = self.args.train_dir
-        elif stage == 'valid':
+        elif stage == "valid":
             self.img_dir = self.args.valid_dir
-        elif stage == 'test':
+        elif stage == "test":
             self.img_dir = self.args.test_dir
-        elif stage == 'predict':
+        elif stage == "predict":
             self.img_dir = self.args.test_dir
         else:
             assert f"No Such Stage. Your input -> {self.stage}"
 
         self.img_paths = [img_path for img_path in paths.list_images(self.img_dir)]
 
-        if stage == 'train':
+        if stage == "train":
             random.shuffle(self.img_paths)
 
         if PreprocFun is not None:
@@ -95,7 +98,7 @@ class LPRNetDataset(Dataset):
         return Image, label, len(label)
 
     def transform(self, img):
-        img = img.astype('float32')
+        img = img.astype("float32")
         img -= 127.5
         img *= 0.0078125
         img = np.transpose(img, (2, 0, 1))
@@ -104,13 +107,15 @@ class LPRNetDataset(Dataset):
 
     def check(self, label):
         # kor_plate_pattern = re.compile('[가-힣]{0,5}[0-9]{0,3}[가-힣][0-9]{4}')
-        idn_plate_pattern = re.compile('[A-Z]{0,3}[0-9]{0,4}[A-Z]{0,3}')
-        plate_name = idn_plate_pattern.findall(''.join([self.args.chars[c] for c in label]))
+        idn_plate_pattern = re.compile("[A-Z]{0,3}[0-9]{0,4}[A-Z]{0,3}")
+        plate_name = idn_plate_pattern.findall(
+            "".join([self.args.chars[c] for c in label])
+        )
 
         return True if plate_name else False
 
 
-class DataModule(pl.LightningDataModule):
+class DataModule(L.LightningDataModule):
     def __init__(self, args):
         super().__init__()
         self.args = args
@@ -131,29 +136,37 @@ class DataModule(pl.LightningDataModule):
             self.predict = LPRNetDataset(self.args, "predict")
 
     def train_dataloader(self):
-        return DataLoader(self.train,
-                          batch_size=self.args.batch_size,
-                          shuffle=True,
-                          num_workers=4,
-                          collate_fn=collate_fn)
+        return DataLoader(
+            self.train,
+            batch_size=self.args.batch_size,
+            shuffle=True,
+            num_workers=4,
+            collate_fn=collate_fn,
+        )
 
     def val_dataloader(self):
-        return DataLoader(self.val,
-                          batch_size=self.args.batch_size,
-                          shuffle=False,
-                          num_workers=4,
-                          collate_fn=collate_fn)
+        return DataLoader(
+            self.val,
+            batch_size=self.args.batch_size,
+            shuffle=False,
+            num_workers=4,
+            collate_fn=collate_fn,
+        )
 
     def test_dataloader(self):
-        return DataLoader(self.test,
-                          batch_size=self.args.batch_size,
-                          shuffle=False,
-                          num_workers=4,
-                          collate_fn=collate_fn)
+        return DataLoader(
+            self.test,
+            batch_size=self.args.batch_size,
+            shuffle=False,
+            num_workers=4,
+            collate_fn=collate_fn,
+        )
 
     def predict_dataloader(self):
-        return DataLoader(self.predict,
-                          batch_size=self.args.batch_size,
-                          shuffle=False,
-                          num_workers=4,
-                          collate_fn=collate_fn)
+        return DataLoader(
+            self.predict,
+            batch_size=self.args.batch_size,
+            shuffle=False,
+            num_workers=4,
+            collate_fn=collate_fn,
+        )

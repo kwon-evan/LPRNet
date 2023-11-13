@@ -7,15 +7,16 @@ from argparse import Namespace
 import warnings
 import yaml
 import torch
-from pytorch_lightning import Trainer
+
+import lightning as L
 
 from lprnet import LPRNet, DataModule
 
 warnings.filterwarnings("ignore")
 
 
-if __name__ == '__main__':
-    with open('config/idn_config.yaml') as f:
+if __name__ == "__main__":
+    with open("config/idn_config.yaml") as f:
         args = Namespace(**yaml.load(f, Loader=yaml.FullLoader))
 
     load_model_start = time.time()
@@ -29,7 +30,7 @@ if __name__ == '__main__':
 
     dm = DataModule(args)
 
-    trainer = Trainer(
+    trainer = L.Trainer(
         accelerator="auto",
         precision=16,
         devices=torch.cuda.device_count(),
