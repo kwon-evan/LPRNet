@@ -7,29 +7,33 @@ from argparse import Namespace
 import warnings
 import yaml
 import torch
-from pytorch_lightning import Trainer
+
+import lightning as L
 
 from lprnet import LPRNet, DataModule
 
 warnings.filterwarnings("ignore")
 
 
-if __name__ == '__main__':
-    with open('config/idn_config.yaml') as f:
+if __name__ == "__main__":
+    with open("config/idn_config.yaml") as f:
         args = Namespace(**yaml.load(f, Loader=yaml.FullLoader))
 
     load_model_start = time.time()
-    lprnet = LPRNet(args)
-    # lprnet.load_state_dict(torch.load(args.pretrained))
+
     if args.pretrained:
-        lprnet = lprnet.load_from_checkpoint(args.pretrained)
+        lprnet = LPRNet.load_from_checkpoint(args.pretrained)
         print("Loaded checkpoint from: ", args.pretrained)
+    else:
+        lprnet = LPRNet(args)
+        print("Created new network")
+
     lprnet.eval()
     print(f"Successful to build network in {time.time() - load_model_start}s")
 
     dm = DataModule(args)
 
-    trainer = Trainer(
+    trainer = L.Trainer(
         accelerator="auto",
         precision=16,
         devices=torch.cuda.device_count(),

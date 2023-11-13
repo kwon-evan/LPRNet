@@ -6,7 +6,7 @@ from argparse import Namespace
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import pytorch_lightning as pl
+import lightning as L
 
 from lprnet.utils import decode, accuracy
 
@@ -33,17 +33,17 @@ class _STNet(nn.Module):
             nn.Mish(True),
             nn.Conv2d(32, 32, kernel_size=5),
             nn.MaxPool2d(3, stride=3),
-            nn.Mish(True)
+            nn.Mish(True),
         )
         # Regressor for the 3x2 affine matrix
         self.fc_loc = nn.Sequential(
-            nn.Linear(32 * 15 * 6, 32),
-            nn.Mish(True),
-            nn.Linear(32, 3 * 2)
+            nn.Linear(32 * 15 * 6, 32), nn.Mish(True), nn.Linear(32, 3 * 2)
         )
-        # Initialize the weights/bias with identity transformation 
+        # Initialize the weights/bias with identity transformation
         self.fc_loc[2].weight.data.zero_()
-        self.fc_loc[2].bias.data.copy_(torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float))
+        self.fc_loc[2].bias.data.copy_(
+            torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float)
+        )
 
     def forward(self, x):
         xs = self.localization(x)
@@ -99,13 +99,19 @@ class _LPRNet(nn.Module):
             nn.BatchNorm2d(num_features=256),
             nn.Mish(),
             nn.Dropout(dropout_rate),
-            nn.Conv2d(in_channels=256, out_channels=class_num, kernel_size=(12, 2), stride=1),
+            nn.Conv2d(
+                in_channels=256, out_channels=class_num, kernel_size=(12, 2), stride=1
+            ),
             nn.BatchNorm2d(num_features=class_num),
             nn.Mish(),
         )
         self.container = nn.Sequential(
-            nn.Conv2d(in_channels=256 + class_num + 128 + 64, out_channels=self.class_num, kernel_size=(1, 1),
-                      stride=(1, 1)),
+            nn.Conv2d(
+                in_channels=256 + class_num + 128 + 64,
+                out_channels=self.class_num,
+                kernel_size=(1, 1),
+                stride=(1, 1),
+            ),
         )
 
     def forward(self, x):
@@ -133,12 +139,14 @@ class _LPRNet(nn.Module):
         return logits
 
 
-class LPRNet(pl.LightningModule):
+class LPRNet(L.LightningModule):
     def __init__(self, args: Optional[Namespace] = None):
         super().__init__()
         self.save_hyperparameters(args)
         self.STNet = _STNet()
-        self.LPRNet = _LPRNet(class_num=len(self.hparams.chars), dropout_rate=self.hparams.dropout_rate)
+        self.LPRNet = _LPRNet(
+            class_num=len(self.hparams.chars), dropout_rate=self.hparams.dropout_rate
+        )
 
     def forward(self, x):
         return self.LPRNet(self.STNet(x))
@@ -150,10 +158,17 @@ class LPRNet(pl.LightningModule):
         logits = self(imgs)
         log_probs = logits.permute(2, 0, 1)
         log_probs = log_probs.log_softmax(2).requires_grad_()
-        input_lengths, target_lengths = sparse_tuple_for_ctc(self.hparams.t_length, lengths)
-        loss = F.ctc_loss(log_probs=log_probs, targets=labels,
-                          input_lengths=input_lengths, target_lengths=target_lengths,
-                          blank=len(self.hparams.chars) - 1, reduction='mean')
+        input_lengths, target_lengths = sparse_tuple_for_ctc(
+            self.hparams.t_length, lengths
+        )
+        loss = F.ctc_loss(
+            log_probs=log_probs,
+            targets=labels,
+            input_lengths=input_lengths,
+            target_lengths=target_lengths,
+            blank=len(self.hparams.chars) - 1,
+            reduction="mean",
+        )
         acc = accuracy(logits, labels, lengths, self.hparams.chars)
 
         self.log("train-loss", abs(loss), prog_bar=True, logger=True, sync_dist=True)
@@ -167,10 +182,17 @@ class LPRNet(pl.LightningModule):
         logits = self(imgs)
         log_probs = logits.permute(2, 0, 1)
         log_probs = log_probs.log_softmax(2).requires_grad_()
-        input_lengths, target_lengths = sparse_tuple_for_ctc(self.hparams.t_length, lengths)
-        loss = F.ctc_loss(log_probs=log_probs, targets=labels,
-                          input_lengths=input_lengths, target_lengths=target_lengths,
-                          blank=len(self.hparams.chars) - 1, reduction='mean')
+        input_lengths, target_lengths = sparse_tuple_for_ctc(
+            self.hparams.t_length, lengths
+        )
+        loss = F.ctc_loss(
+            log_probs=log_probs,
+            targets=labels,
+            input_lengths=input_lengths,
+            target_lengths=target_lengths,
+            blank=len(self.hparams.chars) - 1,
+            reduction="mean",
+        )
         acc = accuracy(logits, labels, lengths, self.hparams.chars)
 
         self.log("val-loss", abs(loss), prog_bar=True, logger=True, sync_dist=True)
@@ -179,14 +201,22 @@ class LPRNet(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         imgs, labels, lengths = batch
         import time
+
         start = time.time()
         logits = self(imgs)
         log_probs = logits.permute(2, 0, 1)
         log_probs = log_probs.log_softmax(2).requires_grad_()
-        input_lengths, target_lengths = sparse_tuple_for_ctc(self.hparams.t_length, lengths)
-        loss = F.ctc_loss(log_probs=log_probs, targets=labels,
-                          input_lengths=input_lengths, target_lengths=target_lengths,
-                          blank=len(self.hparams.chars) - 1, reduction='mean')
+        input_lengths, target_lengths = sparse_tuple_for_ctc(
+            self.hparams.t_length, lengths
+        )
+        loss = F.ctc_loss(
+            log_probs=log_probs,
+            targets=labels,
+            input_lengths=input_lengths,
+            target_lengths=target_lengths,
+            blank=len(self.hparams.chars) - 1,
+            reduction="mean",
+        )
         acc = accuracy(logits, labels, lengths, self.hparams.chars)
         end = time.time()
 
@@ -204,17 +234,27 @@ class LPRNet(pl.LightningModule):
         return predict
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam([{'params': self.STNet.parameters(),
-                                       'weight_decay': self.hparams.weight_decay},
-                                      {'params': self.LPRNet.parameters()}],
-                                     lr=self.hparams.lr)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 10, 2, 0.0001, -1)
-        return {"optimizer": optimizer,
-                "lr_scheduler": {
-                    "scheduler": scheduler,
-                    "interval": "step",
-                    "frequency": 1,
-                    "monitor": "val-loss",
-                    "strict": True,
-                    "name": "lr"
-                }}
+        optimizer = torch.optim.Adam(
+            [
+                {
+                    "params": self.STNet.parameters(),
+                    "weight_decay": self.hparams.weight_decay,
+                },
+                {"params": self.LPRNet.parameters()},
+            ],
+            lr=self.hparams.lr,
+        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer, 10, 2, 0.0001, -1
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+                "monitor": "val-loss",
+                "strict": True,
+                "name": "lr",
+            },
+        }

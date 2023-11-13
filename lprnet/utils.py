@@ -17,7 +17,7 @@ def encode(imgname: str, chars: List[str]):
             label.append(chars_dict[imgname[i:j]])
             i = j
         else:
-            assert 0, f'no such char in {imgname}'
+            assert 0, f"no such char in {imgname}"
 
     return label
 
@@ -32,7 +32,7 @@ def decode(preds, chars):
         for j in range(pred.shape[1]):
             pred_label.append(np.argmax(pred[:, j], axis=0))
         no_repeat_blank_label = list()
-        pre_c = ''
+        pre_c = ""
         for c in pred_label:  # dropout repeated label and blank label
             if (pre_c == c) or (c == len(chars) - 1):
                 if c == len(chars) - 1:
@@ -58,7 +58,7 @@ def accuracy(logits, labels, lengths, chars):
     TP, total = 0, 0
     start = 0
     for i, length in enumerate(lengths):
-        label = labels[start:start + length]
+        label = labels[start : start + length]
         start += length
         if np.array_equal(np.array(pred_labels[i]), label.cpu().numpy()):
             TP += 1
@@ -72,7 +72,7 @@ def tensor2numpy(inp):
     inp = inp.squeeze(0).cpu()
     inp = inp.detach().numpy().transpose((1, 2, 0))
     inp = 127.5 + inp / 0.0078125
-    inp = inp.astype('uint8')
+    inp = inp.astype("uint8")
 
     return inp
 
@@ -80,11 +80,12 @@ def tensor2numpy(inp):
 def numpy2tensor(img: np.ndarray, img_size: Sequence[int]):
     # convert a numpy image to tensor
     import cv2
+
     height, width, _ = img.shape
 
     if height != img_size[1] or width != img_size[0]:
         img = cv2.resize(img, img_size, interpolation=cv2.INTER_CUBIC)
-    img = img.astype('float32')
+    img = img.astype("float32")
     img -= 127.5
     img *= 0.0078125
     img = np.transpose(img, (2, 0, 1))
