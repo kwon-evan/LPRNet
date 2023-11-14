@@ -7,7 +7,7 @@ Pytorch-Lightning Implementation for [sirius-ai/LPRNet_Pytorch](https://github.c
 * inference time: about 5ms at each plate
 
 # Dependencies
-* pytorch-lightning>=2.x
+* lightning>=2.x
 * numpy>=1.17.1
 * torch>=1.10.0
 * tqdm>=4.57.0
