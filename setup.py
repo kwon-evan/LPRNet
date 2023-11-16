@@ -13,7 +13,8 @@ setup(
         'tqdm>=4.57.0',
         'PyYAML>=5.4',
         'imutils>=0.4.0',
-        'rich>=10.2.2'
+        'rich>=10.2.2',
+        'albumentations>=1.3.0'
     ],
     packages=find_packages(),
     classifiers=[ 
