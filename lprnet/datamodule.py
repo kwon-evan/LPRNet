@@ -1,9 +1,10 @@
 import os
 import re
+import cv2
 import random
 import torch
 import numpy as np
-import cv2
+import albumentations as A
 from torch.utils.data import Dataset, DataLoader
 from imutils import paths
 import lightning as L
@@ -46,6 +47,22 @@ def collate_fn(batch):
 
     return (torch.stack(imgs, 0), torch.from_numpy(labels), lengths)
 
+class ImgAugTransform:
+    def __init__(self):
+        self.transform_albu = A.Compose([
+            A.RandomBrightnessContrast(always_apply=False, p=1.0, brightness_limit=(-0.2, 0.22), contrast_limit=(-0.2, 0.2), brightness_by_max=True),
+            A.CoarseDropout(always_apply=False, p=1.0, max_holes=4, max_height=4, max_width=8, min_holes=1, min_height=2, min_width=8, fill_value=(0, 0, 0), mask_fill_value=None),
+            A.ColorJitter(always_apply=False, p=1.0, brightness=(0.8, 1.2), contrast=(0.8, 1.2), saturation=(0.8, 1.2), hue=(-0.2, 0.2)),
+            A.JpegCompression(always_apply=False, p=1.0, quality_lower=50, quality_upper=100),
+            A.MotionBlur(always_apply=False, p=1.0, blur_limit=(3, 5), allow_shifted=True)
+        ])
+    
+    def __call__(self, img):
+        transform_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        transformed = self.transform_albu(image=transform_img)
+        transform_img = transformed["image"]
+        return cv2.cvtColor(transform_img, cv2.COLOR_RGB2BGR)
+    
 
 class LPRNetDataset(Dataset):
     def __init__(self, args, stage, PreprocFun=None):
@@ -69,7 +86,7 @@ class LPRNetDataset(Dataset):
 
         if stage == "train":
             random.shuffle(self.img_paths)
-
+        self.data_augment = ImgAugTransform()
         if PreprocFun is not None:
             self.PreprocFun = PreprocFun
         else:
@@ -81,6 +98,9 @@ class LPRNetDataset(Dataset):
     def __getitem__(self, index):
         filename = self.img_paths[index]
         Image = cv2.imread(filename)
+        # Augment
+        if self.stage == 'train':
+            Image = self.data_augment(Image)
         height, width, _ = Image.shape
         if height != self.img_size[1] or width != self.img_size[0]:
             Image = cv2.resize(Image, self.img_size, interpolation=cv2.INTER_CUBIC)
