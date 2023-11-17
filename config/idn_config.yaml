@@ -8,10 +8,13 @@ dropout_rate: 0.5
 weight_decay: 0.00002
 lr: 0.001
 batch_size: 512
-t_length: 18
+t_length: 19
+gradient_clip_val: 1.0
 chars: [
     # NUMBERS
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
     # ALPHABETS
-    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+    # Middle
+    '-'
 ]
