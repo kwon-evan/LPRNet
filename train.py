@@ -9,6 +9,7 @@ from lightning.pytorch.callbacks import (
     EarlyStopping,
     ModelCheckpoint,
     LearningRateMonitor,
+    RichProgressBar,
 )
 from lightning.pytorch.loggers import WandbLogger
 
@@ -36,6 +37,7 @@ if __name__ == "__main__":
     # Set Trainer
     trainer = L.Trainer(
         callbacks=[
+            RichProgressBar(),
             ModelCheckpoint(
                 dirpath=args.saving_ckpt,
                 monitor="val-acc",
