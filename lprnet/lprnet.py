@@ -22,92 +22,170 @@ def sparse_tuple_for_ctc(t_length, lengths):
     return torch.tensor(input_lengths), torch.tensor(target_lengths)
 
 
-class _STNet(nn.Module):
-    def __init__(self):
-        super(_STNet, self).__init__()
-
-        # Spatial transformer localization-network
-        self.localization = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3),
-            nn.MaxPool2d(2, stride=2),
-            nn.Mish(True),
-            nn.Conv2d(32, 32, kernel_size=5),
-            nn.MaxPool2d(3, stride=3),
-            nn.Mish(True),
-        )
-        # Regressor for the 3x2 affine matrix
-        self.fc_loc = nn.Sequential(
-            nn.Linear(32 * 15 * 6, 32), nn.Mish(True), nn.Linear(32, 3 * 2)
-        )
-        # Initialize the weights/bias with identity transformation
-        self.fc_loc[2].weight.data.zero_()
-        self.fc_loc[2].bias.data.copy_(
-            torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float)
-        )
-
-    def forward(self, x):
-        xs = self.localization(x)
-        xs = xs.view(-1, 32 * 15 * 6)
-        theta = self.fc_loc(xs)
-        theta = theta.view(-1, 2, 3)
-
-        grid = F.affine_grid(theta, x.size(), align_corners=True)
-        x = F.grid_sample(x, grid, align_corners=True)
-
-        return x
-
-
-class small_basic_block(nn.Module):
-    def __init__(self, ch_in, ch_out):
-        super(small_basic_block, self).__init__()
+class res_block(nn.Module):
+    def __init__(self, ch_in, ch_out, stride=1, ks=3, downsample=None, padding=1):
+        super(res_block, self).__init__()
+        self.downsample = downsample
         self.block = nn.Sequential(
-            nn.Conv2d(ch_in, ch_out // 4, kernel_size=1),
-            nn.Mish(),
-            nn.Conv2d(ch_out // 4, ch_out // 4, kernel_size=(3, 1), padding=(1, 0)),
-            nn.Mish(),
-            nn.Conv2d(ch_out // 4, ch_out // 4, kernel_size=(1, 3), padding=(0, 1)),
-            nn.Mish(),
-            nn.Conv2d(ch_out // 4, ch_out, kernel_size=1),
+            nn.Conv2d(
+                in_channels=ch_in,
+                out_channels=ch_out,
+                kernel_size=ks,
+                stride=stride,
+                padding=padding,
+            ),
+            nn.BatchNorm2d(num_features=ch_out),
+            nn.ReLU(),
+            nn.Conv2d(
+                in_channels=ch_out,
+                out_channels=ch_out,
+                kernel_size=ks,
+                stride=1,
+                padding=padding,
+            ),
+            nn.BatchNorm2d(num_features=ch_out),
+        )
+        self.act = nn.ReLU()
+
+    def forward(self, x):
+        out = self.block(x)
+        if self.downsample is not None:
+            x = self.downsample(x)
+        out += x
+        out = self.act(out)
+        return out
+
+
+class downsample(nn.Module):
+    def __init__(self, ch_in, ch_out, kernel_size=3, stride=1, padding=0):
+        super(downsample, self).__init__()
+        self.block = nn.Sequential(
+            nn.Conv2d(
+                in_channels=ch_in,
+                out_channels=ch_out,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+            )
         )
 
     def forward(self, x):
-        return self.block(x)
+        out = self.block(x)
+        return out
 
 
 class _LPRNet(nn.Module):
-    def __init__(self, class_num, dropout_rate):
+    def __init__(self, lpr_max_len, phase, class_num, dropout_rate, device, drop=False):
         super(_LPRNet, self).__init__()
+        self.phase = phase
+        self.lpr_max_len = lpr_max_len
         self.class_num = class_num
-        self.backbone = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3, stride=1),
+        self.device = device
+
+        self.stage1 = nn.Sequential(
+            nn.Conv2d(
+                in_channels=3, out_channels=64, kernel_size=7, stride=1, padding=3
+            ),
             nn.BatchNorm2d(num_features=64),
-            nn.Mish(),
-            nn.MaxPool3d(kernel_size=(1, 3, 3), stride=(1, 1, 1)),
-            small_basic_block(ch_in=64, ch_out=128),
-            nn.BatchNorm2d(num_features=128),
-            nn.Mish(),
-            nn.MaxPool3d(kernel_size=(1, 3, 3), stride=(2, 1, 2)),
-            small_basic_block(ch_in=64, ch_out=256),
+            nn.ReLU(),
+            res_block(ch_in=64, ch_out=64, padding=1),
+            res_block(
+                ch_in=64,
+                ch_out=128,
+                padding=1,
+                downsample=downsample(64, 128, kernel_size=1, stride=1),
+            ),
+            # s2
+            res_block(
+                ch_in=128,
+                ch_out=128,
+                stride=2,
+                padding=1,
+                downsample=downsample(128, 128, kernel_size=1, stride=2),
+            ),
+            res_block(
+                ch_in=128,
+                ch_out=256,
+                padding=1,
+                downsample=downsample(128, 256, kernel_size=1, stride=1),
+            ),
+        )  # (38 x 150)
+
+        self.downsample1 = nn.Sequential(
+            nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=2),
             nn.BatchNorm2d(num_features=256),
-            nn.Mish(),
-            small_basic_block(ch_in=256, ch_out=256),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=2),
             nn.BatchNorm2d(num_features=256),
-            nn.Mish(),
-            nn.MaxPool3d(kernel_size=(1, 3, 3), stride=(4, 2, 2)),
-            nn.Dropout(dropout_rate),
-            nn.Conv2d(in_channels=64, out_channels=256, kernel_size=(2, 4), stride=1),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=2),
             nn.BatchNorm2d(num_features=256),
-            nn.Mish(),
+        )
+
+        self.stage2 = nn.Sequential(
+            res_block(
+                ch_in=256,
+                ch_out=256,
+                stride=2,
+                padding=1,
+                downsample=downsample(256, 256, kernel_size=1, stride=2),
+            ),
+            res_block(ch_in=256, ch_out=256, padding=1),
+        )  # (19 x 75)
+
+        self.downsample2 = nn.Sequential(
+            nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=2),
+            nn.BatchNorm2d(num_features=256),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=2),
+            nn.BatchNorm2d(num_features=256),
+        )
+
+        self.stage3 = nn.Sequential(
+            res_block(
+                ch_in=256,
+                ch_out=256,
+                stride=2,
+                padding=1,
+                downsample=downsample(256, 256, kernel_size=1, stride=2),
+            ),
+            res_block(
+                ch_in=256,
+                ch_out=256,
+                stride=2,
+                padding=1,
+                downsample=downsample(256, 256, kernel_size=1, stride=2),
+            ),
+        )  # (5 x 19)
+        self.stage4 = nn.Sequential(
             nn.Dropout(dropout_rate),
             nn.Conv2d(
-                in_channels=256, out_channels=class_num, kernel_size=(12, 2), stride=1
-            ),
+                in_channels=256,
+                out_channels=256,
+                kernel_size=(1, 5),
+                stride=1,
+                padding=(0, 2),
+            ),  # (6 x 24)
+            nn.BatchNorm2d(num_features=256),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            nn.Conv2d(
+                in_channels=256,
+                out_channels=class_num,
+                kernel_size=(5, 1),
+                stride=1,
+                padding=(2, 0),
+            ),  # (6 x 24)
             nn.BatchNorm2d(num_features=class_num),
-            nn.Mish(),
+            nn.ReLU(),
         )
+
+        self.bn = nn.Sequential(nn.BatchNorm2d(num_features=256))
+        self.bn4 = nn.Sequential(nn.BatchNorm2d(num_features=self.class_num))
+
         self.container = nn.Sequential(
             nn.Conv2d(
-                in_channels=256 + class_num + 128 + 64,
+                in_channels=768 + self.class_num,
                 out_channels=self.class_num,
                 kernel_size=(1, 1),
                 stride=(1, 1),
@@ -115,24 +193,17 @@ class _LPRNet(nn.Module):
         )
 
     def forward(self, x):
-        keep_features = list()
-        for i, layer in enumerate(self.backbone.children()):
-            x = layer(x)
-            if i in [2, 6, 13, 22]:  # [2, 4, 8, 11, 22]
-                keep_features.append(x)
+        stage1 = self.stage1(x)
+        stage2 = self.stage2(stage1)
+        stage3 = self.stage3(stage2)
+        stage4 = self.stage4(stage3)
 
-        global_context = list()
-        for i, f in enumerate(keep_features):
-            if i in [0, 1]:
-                f = nn.AvgPool2d(kernel_size=5, stride=5)(f)
-            if i in [2]:
-                f = nn.AvgPool2d(kernel_size=(4, 10), stride=(5, 2))(f)
-            f_pow = torch.pow(f, 2)
-            f_mean = torch.mean(f_pow)
-            f = torch.div(f, f_mean)
-            global_context.append(f)
+        skip1 = self.downsample1(stage1)
+        skip2 = self.downsample2(stage2)
+        skip3 = stage3
+        skip4 = stage4
 
-        x = torch.cat(global_context, 1)
+        x = torch.cat([skip1, skip2, skip3, skip4], 1)
         x = self.container(x)
         logits = torch.mean(x, dim=2)
 
@@ -143,13 +214,18 @@ class LPRNet(L.LightningModule):
     def __init__(self, args: Optional[Namespace] = None):
         super().__init__()
         self.save_hyperparameters(args)
-        self.STNet = _STNet()
+        print(args)
+        print(self.hparams)
         self.LPRNet = _LPRNet(
-            class_num=len(self.hparams.chars), dropout_rate=self.hparams.dropout_rate
+            lpr_max_len=8,
+            phase=False,
+            class_num=len(self.hparams.chars),
+            dropout_rate=self.hparams.dropout_rate,
+            device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         )
 
     def forward(self, x):
-        return self.LPRNet(self.STNet(x))
+        return self.LPRNet(x)
 
     def training_step(self, batch, batch_idx):
         # training_step defines the train loop. It is independent of forward
@@ -185,6 +261,10 @@ class LPRNet(L.LightningModule):
         input_lengths, target_lengths = sparse_tuple_for_ctc(
             self.hparams.t_length, lengths
         )
+        print(log_probs.shape)
+        print(labels.shape)
+        print(input_lengths.shape)
+        print(target_lengths.shape)
         loss = F.ctc_loss(
             log_probs=log_probs,
             targets=labels,
@@ -237,10 +317,9 @@ class LPRNet(L.LightningModule):
         optimizer = torch.optim.Adam(
             [
                 {
-                    "params": self.STNet.parameters(),
+                    "params": self.LPRNet.parameters(),
                     "weight_decay": self.hparams.weight_decay,
                 },
-                {"params": self.LPRNet.parameters()},
             ],
             lr=self.hparams.lr,
         )
